@@ -1,0 +1,9 @@
+{
+  "name": "Copy of Voice Notes AI",
+  "description": "Record your voice and get it transcribed into structured, downloadable notes with summaries, objectives, and key points, powered by Gemini.",
+  "requestFramePermissions": [
+    "microphone",
+    "display-capture"
+  ],
+  "prompt": ""
+}
