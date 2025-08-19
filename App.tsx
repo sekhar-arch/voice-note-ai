@@ -1,7 +1,4 @@
 
-
-
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { GoogleGenAI } from "@google/genai";
 import { AppState, Notes, HistoryItem } from './types';
@@ -15,24 +12,10 @@ import { Header } from './components/Header';
 import { ErrorDisplay } from './components/ErrorDisplay';
 import { WelcomeScreen } from './components/WelcomeScreen';
 import { HistoryScreen } from './components/HistoryScreen';
-import { PauseIcon, PlayIcon, GenerateIcon, TrashIcon } from './components/icons';
+import { PauseIcon, PlayIcon, SparklesIcon, TrashIcon, RetryIcon, HistoryIcon } from './components/icons';
+import { blobToBase64 } from './utils/fileUtils';
 
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
-// Helper to convert Blob to Base64
-const blobToBase64 = (blob: Blob): Promise<string> => {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const base64data = reader.result as string;
-      // remove the "data:audio/webm;base64," part
-      resolve(base64data.split(',')[1]);
-    };
-    reader.onerror = (error) => reject(error);
-    reader.readAsDataURL(blob);
-  });
-};
-
 
 export default function App() {
   const [appState, setAppState] = useState<AppState>(AppState.IDLE);
@@ -279,7 +262,7 @@ export default function App() {
                 onClick={handleGenerateNotes}
                 className="w-full sm:w-auto flex items-center justify-center gap-3 px-8 py-4 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg transition-colors duration-200 shadow-lg text-lg focus:outline-none focus:ring-4 focus:ring-blue-400 focus:ring-opacity-50"
               >
-                <GenerateIcon className="w-6 h-6" />
+                <SparklesIcon className="w-6 h-6" />
                 Generate Notes
               </button>
               <button
@@ -306,10 +289,15 @@ export default function App() {
     }
   };
 
+  const isHistoryView = appState === AppState.HISTORY || (appState === AppState.SUCCESS && viewingHistoryId !== null);
+  const navAction = isHistoryView ? handleReset : handleShowHistory;
+  const navLabel = isHistoryView ? 'New Note' : 'History';
+  const NavIcon = isHistoryView ? RetryIcon : HistoryIcon;
+
   return (
     <main className="min-h-screen w-full flex flex-col items-center justify-center p-4 sm:p-6 lg:p-8 bg-gray-900">
       <div className="w-full max-w-4xl mx-auto flex flex-col items-center">
-        <Header onShowHistory={handleShowHistory} isHistoryVisible={appState === AppState.HISTORY} />
+        <Header onNavClick={navAction} navLabel={navLabel} NavIcon={NavIcon} />
         <div className="w-full mt-8 bg-gray-800/50 backdrop-blur-sm border border-gray-700 rounded-2xl shadow-2xl shadow-black/20 p-6 md:p-10 min-h-[400px] flex items-center justify-center">
           {renderContent()}
         </div>

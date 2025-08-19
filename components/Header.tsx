@@ -1,8 +1,14 @@
 
 import React from 'react';
-import { MicIcon, HistoryIcon } from './icons';
+import { MicIcon } from './icons';
 
-export const Header: React.FC<{ onShowHistory: () => void; isHistoryVisible: boolean }> = ({ onShowHistory, isHistoryVisible }) => {
+interface HeaderProps {
+    onNavClick: () => void;
+    navLabel: string;
+    NavIcon: React.FC<React.SVGProps<SVGSVGElement>>;
+}
+
+export const Header: React.FC<HeaderProps> = ({ onNavClick, navLabel, NavIcon }) => {
   return (
     <header className="text-center w-full relative">
       <div className="flex items-center justify-center gap-4 mb-2">
@@ -17,13 +23,12 @@ export const Header: React.FC<{ onShowHistory: () => void; isHistoryVisible: boo
         Turn your spoken words into structured summaries, objectives, and key points automatically.
       </p>
       <button
-        onClick={onShowHistory}
-        disabled={isHistoryVisible}
-        className="absolute top-0 right-0 flex items-center gap-2 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold rounded-lg transition-colors duration-200 shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
-        aria-label="View recording history"
+        onClick={onNavClick}
+        className="absolute top-0 right-0 flex items-center gap-2 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold rounded-lg transition-colors duration-200 shadow-md"
+        aria-label={navLabel}
       >
-        <HistoryIcon className="w-5 h-5" />
-        History
+        <NavIcon className="w-5 h-5" />
+        {navLabel}
       </button>
     </header>
   );
