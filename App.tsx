@@ -117,15 +117,13 @@ export default function App() {
       console.error("Permission denied or failed to start:", err);
       let message = "An unknown error occurred while trying to start the recording.";
       if (err instanceof Error) {
-        // DOMException names provide more specific info
+        // DOMException names provide more specific info for explicit permission denials.
         if ((err as DOMException).name === 'NotAllowedError') {
             message = "Permission to record was denied. Please allow microphone and/or screen recording access in your browser's site settings and try again.";
-        } else if (err.message.includes("system audio")) {
-            // Custom error from the recorder hook, e.g., for not sharing system audio.
-            // We pass the helpful message from the hook directly to the user.
-            message = err.message;
         } else {
-            message = "Could not start recording. A required device might not be available, or another application could be using it.";
+            // For other errors, including our custom ones from the audio hook,
+            // display the message directly as it's intended for the user.
+            message = err.message;
         }
       }
       setError(message);

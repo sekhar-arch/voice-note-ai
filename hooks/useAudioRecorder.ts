@@ -43,98 +43,91 @@ export const useAudioRecorder = () => {
 
   const startRecording = useCallback(async (recordMic: boolean, recordSystem: boolean, noiseReduction: boolean) => {
     if (isRecording) return;
-    
-    let micStream: MediaStream | null = null;
-    let displayStream: MediaStream | null = null;
-    
-    const audioConstraints: MediaTrackConstraints = {
-      noiseSuppression: noiseReduction,
-      echoCancellation: noiseReduction,
-      autoGainControl: true,
-    };
+
+    let acquiredMicStream: MediaStream | null = null;
+    let acquiredDisplayStream: MediaStream | null = null;
 
     try {
-      // Step 1: Acquire streams based on user selection
+      const audioConstraints: MediaTrackConstraints = {
+        noiseSuppression: noiseReduction,
+        echoCancellation: noiseReduction,
+        autoGainControl: true,
+      };
+
+      // Step 1: Acquire all requested streams. If any request fails (e.g., permission denied),
+      // the entire operation will be caught and aborted with a specific error.
       if (recordMic) {
-        micStream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
-        micStreamRef.current = micStream;
+        acquiredMicStream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
       }
       
       if (recordSystem) {
-        displayStream = await navigator.mediaDevices.getDisplayMedia({
+        const displayMediaOptions: DisplayMediaStreamOptions = {
           video: true,
-          audio: true, // Request audio along with video
-        });
-        displayStreamRef.current = displayStream;
-      }
-
-      // Step 2: Validate the acquired streams and provide specific error feedback.
-      const micAudioAvailable = micStream?.getAudioTracks().length > 0;
-      const systemAudioAvailable = displayStream?.getAudioTracks().length > 0;
-
-      if (recordSystem && !systemAudioAvailable) {
-        // User intended to record system audio but didn't grant permission in the prompt.
-        // This is a critical failure of user intent.
-        const helpfulHint = "System audio not shared. To include it, please check the 'Share tab audio' or 'Share system audio' option in your browser's screen sharing prompt.";
-        
-        if (micAudioAvailable) {
-          // A microphone is available, but we stop to avoid a confusing "partial" recording
-          // that's missing the requested system audio.
-          throw new Error(`${helpfulHint} The recording has been cancelled to ensure all desired audio is captured. Please try again.`);
-        } else {
-          // No system audio was shared, and no microphone is available either.
-          throw new Error(`${helpfulHint} Since no audio source is available, the recording cannot start.`);
-        }
-      }
-
-      // If we're here, either system audio was not requested, or it was successful.
-      // Now, we just need to ensure at least one audio source is active.
-      if (!micAudioAvailable && !systemAudioAvailable) {
-        throw new Error("No audio source is available. Please enable microphone access or select an option with audio to record.");
-      }
-
-
-      // At this point, displayStream (if it exists) is guaranteed to have an audio track.
-      // Set up onended handler for a valid displayStream.
-      if(displayStreamRef.current){
-         const videoTrack = displayStreamRef.current.getVideoTracks()[0];
-         if (videoTrack) {
-           videoTrack.onended = () => {
-             if (mediaRecorderRef.current?.state !== 'inactive') {
-               stopRecording();
-             }
-           };
-         }
-      }
-
-
-      // Step 3: Combine streams into a single final stream for the MediaRecorder
-      let finalStream: MediaStream;
-      if (micAudioAvailable && systemAudioAvailable) {
-        // Mix both microphone and system audio
-        const audioContext = new AudioContext();
-        audioContextRef.current = audioContext;
-        const destination = audioContext.createMediaStreamDestination();
-
-        const micSource = audioContext.createMediaStreamSource(micStream!);
-        micSource.connect(destination);
-        
-        const displaySource = audioContext.createMediaStreamSource(displayStream!);
-        displaySource.connect(destination);
-
-        finalStream = destination.stream;
-      } else if (micAudioAvailable) {
-        // Only microphone audio is available
-        finalStream = micStream!;
-      } else {
-        // Only system audio is available
-        // Create a new stream with only the audio tracks from the display media
-        finalStream = new MediaStream(displayStream!.getAudioTracks());
+          audio: true,
+          // @ts-ignore - This is a non-standard but widely-supported option in Chromium browsers
+          systemAudio: 'include',
+        };
+        acquiredDisplayStream = await navigator.mediaDevices.getDisplayMedia(displayMediaOptions);
       }
       
-      // Step 4: Configure and start MediaRecorder
+      micStreamRef.current = acquiredMicStream;
+      displayStreamRef.current = acquiredDisplayStream;
+
+      // Step 2: Validate that we have at least one audio track to record.
+      const micAudioTracks = acquiredMicStream?.getAudioTracks() ?? [];
+      const systemAudioTracks = acquiredDisplayStream?.getAudioTracks() ?? [];
+      const allAudioTracks = [...micAudioTracks, ...systemAudioTracks];
+
+      if (allAudioTracks.length === 0) {
+        // If system audio was the *only* source requested, and it failed, provide a specific error.
+        if (recordSystem && !recordMic) {
+            throw new Error("System audio not shared. To include it, please check the 'Share tab audio' or 'Share system audio' option in your browser's screen sharing prompt.");
+        }
+        // For all other cases of failure (mic denied, or both sources failed), provide a general error.
+        throw new Error("No audio source available. Please grant permission for at least one audio source to start recording.");
+      }
+      
+      // Step 3: Combine audio tracks and configure the recorder.
+      let audioStream: MediaStream;
+      const videoTracks = acquiredDisplayStream?.getVideoTracks() ?? [];
+
+      if (acquiredMicStream && acquiredDisplayStream && micAudioTracks.length > 0 && systemAudioTracks.length > 0) {
+        const audioContext = new AudioContext();
+        audioContextRef.current = audioContext;
+
+        if (audioContext.state === 'suspended') {
+            await audioContext.resume();
+        }
+
+        const destination = audioContext.createMediaStreamDestination();
+        const micSource = audioContext.createMediaStreamSource(acquiredMicStream);
+        micSource.connect(destination);
+        const displayAudioSource = audioContext.createMediaStreamSource(acquiredDisplayStream);
+        displayAudioSource.connect(destination);
+        
+        const mixedAudioTracks = destination.stream.getAudioTracks();
+        audioStream = new MediaStream(mixedAudioTracks);
+      } else {
+        audioStream = new MediaStream(allAudioTracks);
+      }
+      
+      // The video track is only used to detect when screen sharing stops.
+      // We don't want to record it.
+      if (videoTracks.length > 0) {
+        videoTracks[0].onended = () => {
+            if (mediaRecorderRef.current?.state !== 'inactive') {
+              stopRecording();
+            }
+        };
+      }
+      
+      const mimeType = 'audio/webm';
+      if (!MediaRecorder.isTypeSupported(mimeType)) {
+        throw new Error(`Your browser does not support recording in the required format (${mimeType}).`);
+      }
+      
       const audioBitrate = noiseReduction ? 192000 : 128000;
-      const recorder = new MediaRecorder(finalStream, { mimeType: 'audio/webm', audioBitsPerSecond: audioBitrate });
+      const recorder = new MediaRecorder(audioStream, { mimeType, audioBitsPerSecond: audioBitrate });
       mediaRecorderRef.current = recorder;
     
       audioChunksRef.current = [];
@@ -155,7 +148,7 @@ export const useAudioRecorder = () => {
         if (timerIntervalRef.current) {
           clearInterval(timerIntervalRef.current);
         }
-        stopAllStreams(); // Full cleanup after stopping
+        stopAllStreams();
       };
 
       recorder.start();
@@ -174,16 +167,17 @@ export const useAudioRecorder = () => {
 
     } catch (err) {
         console.error("Failed to start recording:", err);
-        // This catch block is crucial. It ensures that if any part of the `try` block fails,
-        // we clean up all acquired streams before re-throwing the error.
-        stopAllStreams();
-        // Also clean up the temporary displayStream if it wasn't assigned to the ref
-        if (displayStream && displayStreamRef.current !== displayStream) {
-            displayStream.getTracks().forEach(track => track.stop());
-        }
-        throw err; // Re-throw the error so the UI component can handle it
+        // Clean up any streams that were acquired before the error.
+        acquiredMicStream?.getTracks().forEach(track => track.stop());
+        acquiredDisplayStream?.getTracks().forEach(track => track.stop());
+        
+        micStreamRef.current = null;
+        displayStreamRef.current = null;
+        
+        // Re-throw so the UI component can display the specific error.
+        throw err;
     }
-  }, [isRecording, stopAllStreams, stopRecording]);
+  }, [isRecording, stopRecording, stopAllStreams]);
 
   const togglePause = useCallback(() => {
     if (!isRecording || !mediaRecorderRef.current || isTogglingPauseRef.current) {
@@ -210,7 +204,6 @@ export const useAudioRecorder = () => {
       }
     }
     
-    // Unlock after a short delay to allow the recorder's state to settle.
     setTimeout(() => {
       isTogglingPauseRef.current = false;
     }, 200);
